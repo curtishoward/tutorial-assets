@@ -36,7 +36,7 @@
 #
 #  Source File Name: Pre-SetupDW.py
 #
-#  REQUIREMENT: Update variable s3BucketName
+#  REQUIREMENT: Update variable s3BucketPath
 #               using storage.location.base attribute; defined by your environment.
 #
 # #  Description: As a prerequisite, we need to setup data warehouse with
@@ -58,32 +58,41 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 import pyspark.sql.functions as F
-
-#---------------------------------------------------
-#               CREATE SPARK SESSION
-#---------------------------------------------------
-spark = SparkSession.builder.appName('Ingest').getOrCreate()
-spark.conf.set("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
-
-
-
+import configparser
+import os 
+import sys
 #-----------------------------------------------------------------------------------
 # LOAD DATA FROM .CSV FILES ON AWS S3 CLOUD STORAGE
 #
-# REQUIREMENT: Update variable s3BucketName
+# REQUIREMENT: Update variable s3BucketPath
 #              using storage.location.base attribute; defined by your environment.
 #
 #              For example, property storage.location.base
 #                           has value 's3a://usermarketing-cdp-demo'
 #                           Therefore, set variable as:
-#                                 s3BucketName = "s3a://usermarketing-cdp-demo"
+#                                 s3BucketPath = "s3a://usermarketing-cdp-demo"
 #-----------------------------------------------------------------------------------
-s3BucketName = "s3BucketName"         # <--- Update S3 bucket location
-car_installs  = spark.read.csv(s3BucketName + "/car_installs.csv",        header=True, inferSchema=True)
-car_sales     = spark.read.csv(s3BucketName + "/car_sales.csv",           header=True, inferSchema=True)
-customer_data = spark.read.csv(s3BucketName + "/customer_data.csv",       header=True, inferSchema=True)
-factory_data  = spark.read.csv(s3BucketName + "/experimental_motors.csv", header=True, inferSchema=True)
-geo_data      = spark.read.csv(s3BucketName + "/postal_codes.csv",        header=True, inferSchema=True)
+config = configparser.ConfigParser()
+config.read('/app/mount/cde_examples.ini')
+s3BucketPath = config['CDE-examples']['s3BucketPath'].replace('"','').replace("\'",'')
+prefix = config['CDE-examples']['userPrefix'].replace('"','').replace("\'",'')
+
+SALES_DB = prefix + "_SALES"
+FACTORY_DB = prefix + "_FACTORY"
+MARKETING_DB = prefix + "_MARKETING"
+
+#---------------------------------------------------
+#               CREATE SPARK SESSION
+#---------------------------------------------------
+spark = SparkSession.builder.appName('Ingest-' + prefix).getOrCreate()
+spark.conf.set("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
+spark.conf.set("cde.gangScheduling.enabled", "true")
+
+car_installs  = spark.read.csv(s3BucketPath + "/car_installs.csv",        header=True, inferSchema=True)
+car_sales     = spark.read.csv(s3BucketPath + "/car_sales.csv",           header=True, inferSchema=True)
+customer_data = spark.read.csv(s3BucketPath + "/customer_data.csv",       header=True, inferSchema=True)
+factory_data  = spark.read.csv(s3BucketPath + "/experimental_motors.csv", header=True, inferSchema=True)
+geo_data      = spark.read.csv(s3BucketPath + "/postal_codes.csv",        header=True, inferSchema=True)
 
 
 
@@ -91,9 +100,9 @@ geo_data      = spark.read.csv(s3BucketName + "/postal_codes.csv",        header
 #       SQL CLEANUP: DATABASES, TABLES, VIEWS
 #---------------------------------------------------
 print("JOB STARTED...")
-spark.sql("DROP DATABASE IF EXISTS SALES CASCADE")
-spark.sql("DROP DATABASE IF EXISTS FACTORY CASCADE")
-spark.sql("DROP DATABASE IF EXISTS MARKETING CASCADE")
+spark.sql("DROP DATABASE IF EXISTS " + SALES_DB + " CASCADE")
+spark.sql("DROP DATABASE IF EXISTS " + FACTORY_DB + " CASCADE")
+spark.sql("DROP DATABASE IF EXISTS " + MARKETING_DB + " CASCADE")
 print("\tDROP DATABASE(S) COMPLETED")
 
 
@@ -101,9 +110,9 @@ print("\tDROP DATABASE(S) COMPLETED")
 ##---------------------------------------------------
 ##                 CREATE DATABASES
 ##---------------------------------------------------
-spark.sql("CREATE DATABASE SALES")
-spark.sql("CREATE DATABASE FACTORY")
-spark.sql("CREATE DATABASE MARKETING")
+spark.sql("CREATE DATABASE " + SALES_DB)
+spark.sql("CREATE DATABASE " + FACTORY_DB)
+spark.sql("CREATE DATABASE " + MARKETING_DB)
 print("\tCREATE DATABASE(S) COMPLETED")
 
 
@@ -111,11 +120,11 @@ print("\tCREATE DATABASE(S) COMPLETED")
 #---------------------------------------------------
 #               POPULATE TABLES
 #---------------------------------------------------
-car_sales.write.mode("overwrite").saveAsTable('SALES.CAR_SALES', format="parquet")
-car_installs.write.mode("overwrite").saveAsTable('FACTORY.CAR_INSTALLS', format="parquet")
-factory_data.write.mode("overwrite").saveAsTable('FACTORY.EXPERIMENTAL_MOTORS', format="parquet")
-customer_data.write.mode("overwrite").saveAsTable('MARKETING.CUSTOMER_DATA', format="parquet")
-geo_data.write.mode("overwrite").saveAsTable('MARKETING.GEO_DATA_XREF', format="parquet")
+car_sales.write.mode("overwrite").saveAsTable(SALES_DB + '.CAR_SALES', format="parquet")
+car_installs.write.mode("overwrite").saveAsTable(FACTORY_DB + '.CAR_INSTALLS', format="parquet")
+factory_data.write.mode("overwrite").saveAsTable(FACTORY_DB +'.EXPERIMENTAL_MOTORS', format="parquet")
+customer_data.write.mode("overwrite").saveAsTable(MARKETING_DB + '.CUSTOMER_DATA', format="parquet")
+geo_data.write.mode("overwrite").saveAsTable(MARKETING_DB + '.GEO_DATA_XREF', format="parquet")
 print("\tPOPULATE TABLE(S) COMPLETED")
 
 print("JOB COMPLETED.\n\n")

@@ -56,25 +56,35 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 import pyspark.sql.functions as F
+import configparser
+import os
+import sys
+
+config = configparser.ConfigParser()
+config.read('/app/mount/cde_examples.ini')
+prefix = config['CDE-examples']['userPrefix'].replace('"','').replace("\'",'')
+
+SALES_DB = prefix + "_SALES"
+FACTORY_DB = prefix + "_FACTORY"
+MARKETING_DB = prefix + "_MARKETING"
 
 #---------------------------------------------------
 #               CREATE SPARK SESSION
 #---------------------------------------------------
-spark = SparkSession.builder.appName('Ingest').getOrCreate()
+spark = SparkSession.builder.appName('Ingest-' + prefix).getOrCreate()
 spark.conf.set("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
 _DEBUG_ = False
-
 
 
 #---------------------------------------------------
 #                READ SOURCE TABLES
 #---------------------------------------------------
 print("JOB STARTED...")
-car_sales     = spark.sql("SELECT * FROM sales.car_sales")
-customer_data = spark.sql("SELECT * FROM marketing.customer_data")
-car_installs  = spark.sql("SELECT * FROM factory.car_installs")
-factory_data  = spark.sql("SELECT * FROM factory.experimental_motors")
-geo_data      = spark.sql("SELECT postalcode as zip, latitude, longitude FROM marketing.geo_data_xref")
+car_sales     = spark.sql("SELECT * FROM " + SALES_DB + ".car_sales")
+customer_data = spark.sql("SELECT * FROM " + MARKETING_DB + ".customer_data")
+car_installs  = spark.sql("SELECT * FROM " + FACTORY_DB + ".car_installs")
+factory_data  = spark.sql("SELECT * FROM " + FACTORY_DB + ".experimental_motors")
+geo_data      = spark.sql("SELECT postalcode as zip, latitude, longitude FROM " + MARKETING_DB + ".geo_data_xref")
 print("\tREAD TABLE(S) COMPLETED")
 
 
@@ -95,7 +105,7 @@ print(f"\tFILTER DATA (CUSTOMER_DATA): Before({before}), After ({after}), Differ
 #---------------------------------------------------
 # SQL way to do things
 salesandcustomers_sql = "SELECT customers.*, sales.sale_date, sales.saleprice, sales.model, sales.VIN \
-                            FROM sales.car_sales sales JOIN marketing.customer_data customers \
+                            FROM " + SALES_DB + ".car_sales sales JOIN " + MARKETING_DB + ".customer_data customers \
                              ON sales.customer_id = customers.customer_id "
 tempTable = spark.sql(salesandcustomers_sql)
 if (_DEBUG_):
@@ -137,8 +147,8 @@ if (_DEBUG_):
 #---------------------------------------------------
 #             CREATE NEW HIVE TABLE
 #---------------------------------------------------
-tempTable.write.mode("overwrite").saveAsTable('factory.experimental_motors_enriched', format="parquet")
-print("\tNEW ENRICHED TABLE CREATED: FACTORY.EXPERIMENTAL_MOTORS_ENRICHED")
+tempTable.write.mode("overwrite").saveAsTable(FACTORY_DB + '.experimental_motors_enriched', format="parquet")
+print("\tNEW ENRICHED TABLE CREATED: " + FACTORY_DB + "FACTORY.EXPERIMENTAL_MOTORS_ENRICHED")
 tempTable.show(n=5)
 
 
